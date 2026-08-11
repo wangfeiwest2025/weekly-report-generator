@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# 临时文件
+~$*
+*.tmp
+
+# Streamlit
+.streamlit/
+
+# 运行数据（历史记录由程序自动生成）
+周报历史记录.json
