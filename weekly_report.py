@@ -198,12 +198,11 @@ def last_year_check(path, m0, d0, m1, d1):
 
 
 def last_year_punish(path, m0, d0, m1, d1):
-    """2025年工程建设领域处罚.xls -> (件数, 罚款金额元)，按添加日期 + 文书类型口径（与本周口径一致）。"""
+    """2025年工程建设领域处罚.xls -> (件数, 罚款金额元)，按决定日期 + 文书类型口径（与2026年添加日期口径区分）。"""
     df = pd.read_excel(path, sheet_name=0)
     if "文书类型" in df.columns:
         df = df[df["文书类型"].astype(str).str.strip().isin(PUNISH_DOCS)]
-    col = "添加日期" if "添加日期" in df.columns else "决定日期"
-    mask = md_mask(df[col], m0, d0, m1, d1)
+    mask = md_mask(df["决定日期"], m0, d0, m1, d1)
     amt = None
     if "处罚金额" in df.columns:
         amt = float(pd.to_numeric(df.loc[mask, "处罚金额"], errors="coerce").fillna(0).sum())
@@ -465,7 +464,7 @@ def compute(opts, log):
 
     ly_check, ly_prob = last_year_check(opts["check2025"], d0.month, d0.day, d1.month, d1.day)
     ly_punish, ly_amount = last_year_punish(opts["punish2025"], d0.month, d0.day, d1.month, d1.day)
-    log("去年同期（2025年xls按同月日、添加日期/时间口径）: 检查 %d 次 / 问题 %d 项次 / 处罚 %d 件"
+    log("去年同期（2025年xls按同月日、处罚决定书日期口径）: 检查 %d 次 / 问题 %d 项次 / 处罚 %d 件"
         % (ly_check, ly_prob, ly_punish))
     if ly_amount is not None:
         log("去年同期罚款金额: %.1f 万元" % (ly_amount / 10000))
