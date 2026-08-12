@@ -198,10 +198,12 @@ def last_year_check(path, m0, d0, m1, d1):
 
 
 def last_year_punish(path, m0, d0, m1, d1):
-    """2025年工程建设领域处罚.xls -> (件数, 罚款金额元)，按决定日期 + 文书类型口径（与2026年添加日期口径区分）。"""
+    """2025年工程建设领域处罚.xls -> (件数, 罚款金额元)，按决定日期 + 文书类型 + 工程建设领域口径。"""
     df = pd.read_excel(path, sheet_name=0)
     if "文书类型" in df.columns:
         df = df[df["文书类型"].astype(str).str.strip().isin(PUNISH_DOCS)]
+    if "职权领域" in df.columns:
+        df = df[df["职权领域"].astype(str).str.strip() == "工程建设"]
     mask = md_mask(df["决定日期"], m0, d0, m1, d1)
     amt = None
     if "处罚金额" in df.columns:
@@ -227,9 +229,12 @@ def lian_stats(check_raw_path, d0, d1, org2dist):
 
 
 def punish_stats(punish_raw_path, d0, d1, org2dist):
-    """处罚原始导出 -> (件数, {区: 件数}, 罚款金额元)，按添加日期。"""
+    """处罚原始导出 -> (件数, {区: 件数}, 罚款金额元)，按添加日期 + 工程建设领域过滤。"""
     raw = read_any_excel(punish_raw_path)
     raw = raw[raw["文书类型"].astype(str).str.strip().isin(PUNISH_DOCS)]
+    # 只统计工程建设领域（排除房屋管理、房地产市场等）
+    if "职权领域" in raw.columns:
+        raw = raw[raw["职权领域"].astype(str).str.strip() == "工程建设"]
     raw["_dist"] = raw["执法机构"].astype(str).str.strip().map(org2dist)
     mask = day_mask(raw["添加日期"], d0, d1)
     sub = raw[mask]
@@ -491,7 +496,7 @@ def compute(opts, log):
 
     # 处罚
     tw_punish, dist_punish, tw_amount = punish_stats(opts["punish_raw"], d0, d1, org2dist)
-    log("本周处罚 %d 件（处罚导出按添加日期）" % tw_punish)
+    log("本周处罚 %d 件（处罚导出按添加日期+工程建设领域）" % tw_punish)
     if tw_amount is not None:
         log("本周罚款金额: %.1f 万元" % (tw_amount / 10000))
 
@@ -499,12 +504,10 @@ def compute(opts, log):
     lw_punish = opts.get("lw_punish")
     if lw_punish is not None:
         log("上周处罚 %d 件（手动指定）" % lw_punish)
-    elif "punish_total" in lw_hist:
-        lw_punish = lw_hist["punish_total"]
-        log("上周处罚 %d 件（历史记录，与上周报告一致）" % lw_punish)
     else:
+        # 启用领域过滤时历史记录（旧口径）不可用，始终从文件重算
         lw_punish, _, _ = punish_stats(opts["punish_raw"], lw_d0, lw_d1, org2dist)
-        log("上周处罚 %d 件（由处罚导出重算，可能与上周报告略有出入）" % lw_punish)
+        log("上周处罚 %d 件（由处罚导出重算，按添加日期+工程建设领域）" % lw_punish)
     if lw_punish is not None:
         if "punish_amount" in lw_hist:
             lw_amount = lw_hist["punish_amount"]
