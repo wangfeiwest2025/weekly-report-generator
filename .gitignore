@@ -13,3 +13,6 @@ venv/
 
 # 运行数据（历史记录由程序自动生成）
 周报历史记录.json
+
+# ModelScope 克隆仓库（独立 git 仓库）
+weekly-report-generator/

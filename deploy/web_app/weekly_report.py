@@ -197,12 +197,15 @@ def last_year_check(path, m0, d0, m1, d1):
 
 
 def last_year_punish(path, m0, d0, m1, d1):
-    """2025年工程建设领域处罚.xls -> 件数，按决定日期 + 文书类型口径。"""
+    """2025年工程建设领域处罚.xls -> (件数, 罚款金额元)，按决定日期 + 文书类型口径。"""
     df = pd.read_excel(path, sheet_name=0)
     if "文书类型" in df.columns:
         df = df[df["文书类型"].astype(str).str.strip().isin(PUNISH_DOCS)]
     mask = md_mask(df["决定日期"], m0, d0, m1, d1)
-    return int(mask.sum())
+    amt = None
+    if "处罚金额" in df.columns:
+        amt = float(pd.to_numeric(df.loc[mask, "处罚金额"], errors="coerce").fillna(0).sum())
+    return int(mask.sum()), amt
 
 
 # ---------------------------------------------------------------------------
@@ -223,14 +226,17 @@ def lian_stats(check_raw_path, d0, d1, org2dist):
 
 
 def punish_stats(punish_raw_path, d0, d1, org2dist):
-    """处罚原始导出 -> (总数, {区: 件数})，按添加日期。"""
+    """处罚原始导出 -> (件数, {区: 件数}, 罚款金额元)，按添加日期。"""
     raw = read_any_excel(punish_raw_path)
     raw = raw[raw["文书类型"].astype(str).str.strip().isin(PUNISH_DOCS)]
     raw["_dist"] = raw["执法机构"].astype(str).str.strip().map(org2dist)
     mask = day_mask(raw["添加日期"], d0, d1)
     sub = raw[mask]
     per_dist = sub["_dist"].value_counts().to_dict()
-    return int(len(sub)), {k: int(v) for k, v in per_dist.items()}
+    amt = None
+    if "处罚金额" in raw.columns:
+        amt = float(pd.to_numeric(sub["处罚金额"], errors="coerce").fillna(0).sum())
+    return int(len(sub)), {k: int(v) for k, v in per_dist.items()}, amt
 
 
 def week_from_exports(*paths):
@@ -290,6 +296,13 @@ def short(name):
     return DIST_SHORT.get(name, name)
 
 
+def fmt_amount(yuan):
+    """元 -> 万元字符串（保留1位小数）；None -> '-'。"""
+    if yuan is None:
+        return "-"
+    return "%.1f" % (yuan / 10000)
+
+
 def build_paragraphs(c):
     """根据计算结果字典 c 生成两段正文。"""
     rng = "%d月%d日-%d月%d日" % (c["m0"], c["d0"], c["m1"], c["d1"])
@@ -332,10 +345,13 @@ def build_paragraphs(c):
     ptimes = fmt_times(c["tw_punish"], c["ly_punish"])
     rank_str = "、".join(short(x) for x in c["punish_rank"])
     para2 = (
-        "本周（%s）全市住建系统共作出工程建设领域处罚%d件，（上周%d件，去年同期%d件），"
+        "本周（%s）全市住建系统共作出工程建设领域处罚%d件，罚款金额%s万元"
+        "（上周%d件，罚款金额%s万元；去年同期%d件，罚款金额%s万元），"
         "环比%s%s%%，为去年同期的%s倍。"
         "在施项目数量较多的前八个区中，每百工程处罚量从高到底排名分别是%s。"
-        % (rng, c["tw_punish"], c["lw_punish"], c["ly_punish"],
+        % (rng, c["tw_punish"], fmt_amount(c["tw_amount"]),
+           c["lw_punish"], fmt_amount(c["lw_amount"]),
+           c["ly_punish"], fmt_amount(c["ly_amount"]),
            phb_dir, phb_val, ptimes, rank_str)
     )
     return para1, para2
@@ -440,9 +456,11 @@ def compute(opts, log):
         log("上周检查/问题 改采历史记录（与上周报告一致）: %d / %d" % (lw_check, lw_prob))
 
     ly_check, ly_prob = last_year_check(opts["check2025"], d0.month, d0.day, d1.month, d1.day)
-    ly_punish = last_year_punish(opts["punish2025"], d0.month, d0.day, d1.month, d1.day)
+    ly_punish, ly_amount = last_year_punish(opts["punish2025"], d0.month, d0.day, d1.month, d1.day)
     log("去年同期（2025年xls按同月日筛选）: 检查 %d 次 / 问题 %d 项次 / 处罚 %d 件"
         % (ly_check, ly_prob, ly_punish))
+    if ly_amount is not None:
+        log("去年同期罚款金额: %.1f 万元" % (ly_amount / 10000))
 
     city_check = tw["执法处"]["check"]
     city_prob = tw["执法处"]["problem"]
@@ -465,9 +483,12 @@ def compute(opts, log):
            "、".join("%s(%d)" % (n, dist_lian.get(n, 0)) for n in lian_dists) or "无"))
 
     # 处罚
-    tw_punish, dist_punish = punish_stats(opts["punish_raw"], d0, d1, org2dist)
+    tw_punish, dist_punish, tw_amount = punish_stats(opts["punish_raw"], d0, d1, org2dist)
     log("本周处罚 %d 件（处罚导出按添加日期）" % tw_punish)
+    if tw_amount is not None:
+        log("本周罚款金额: %.1f 万元" % (tw_amount / 10000))
 
+    lw_amount = None
     lw_punish = opts.get("lw_punish")
     if lw_punish is not None:
         log("上周处罚 %d 件（手动指定）" % lw_punish)
@@ -475,8 +496,16 @@ def compute(opts, log):
         lw_punish = lw_hist["punish_total"]
         log("上周处罚 %d 件（历史记录，与上周报告一致）" % lw_punish)
     else:
-        lw_punish, _ = punish_stats(opts["punish_raw"], lw_d0, lw_d1, org2dist)
+        lw_punish, _, _ = punish_stats(opts["punish_raw"], lw_d0, lw_d1, org2dist)
         log("上周处罚 %d 件（由处罚导出重算，可能与上周报告略有出入）" % lw_punish)
+    if lw_punish is not None:
+        if "punish_amount" in lw_hist:
+            lw_amount = lw_hist["punish_amount"]
+            log("上周罚款金额: %.1f 万元（历史记录）" % (lw_amount / 10000))
+        elif tw_amount is not None:
+            lw_amount = punish_stats(opts["punish_raw"], lw_d0, lw_d1, org2dist)[2]
+            if lw_amount is not None:
+                log("上周罚款金额: %.1f 万元（由处罚导出重算）" % (lw_amount / 10000))
 
     punish_rank = sorted(top8, key=lambda n: (-(dist_punish.get(n, 0) / zaishi[n]), -zaishi[n]))
     log("每百工程处罚量: %s" % "、".join(
@@ -488,12 +517,14 @@ def compute(opts, log):
              city_check=city_check, city_prob=city_prob, city_lian=city_lian,
              most_dist=most_dist, none_dists=none_dists, lian_dists=lian_dists,
              tw_punish=tw_punish, lw_punish=lw_punish, ly_punish=ly_punish,
+             tw_amount=tw_amount, lw_amount=lw_amount, ly_amount=ly_amount,
              punish_rank=punish_rank)
     para1, para2 = build_paragraphs(c)
 
     # 保存历史（供下周环比引用）
     hist[week_key(d0, d1)] = {"punish_total": tw_punish, "check_total": tw_check,
-                              "problem_total": tw_prob, "generated": dt.datetime.now().isoformat()}
+                              "problem_total": tw_prob, "punish_amount": tw_amount,
+                              "generated": dt.datetime.now().isoformat()}
     save_history(hist)
     return para1, para2
 
