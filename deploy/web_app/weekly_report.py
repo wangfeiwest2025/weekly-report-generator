@@ -343,16 +343,22 @@ def build_paragraphs(c):
 
     phb_dir, phb_val = fmt_pct(c["tw_punish"], c["lw_punish"])
     ptimes = fmt_times(c["tw_punish"], c["ly_punish"])
+    if (c["tw_amount"] is not None and c["lw_amount"] is not None
+            and c["ly_amount"] is not None):
+        amt_hb_dir, amt_hb_val = fmt_pct(c["tw_amount"], c["lw_amount"])
+        amt_times = fmt_times(c["tw_amount"], c["ly_amount"])
+        amt_seg = "。罚款金额%s万元，（上周%s万元，去年同期%s万元），环比%s%s%%，为去年同期的%s倍" % (
+            fmt_amount(c["tw_amount"]), fmt_amount(c["lw_amount"]),
+            fmt_amount(c["ly_amount"]), amt_hb_dir, amt_hb_val, amt_times)
+    else:
+        amt_seg = ""
     rank_str = "、".join(short(x) for x in c["punish_rank"])
     para2 = (
-        "本周（%s）全市住建系统共作出工程建设领域处罚%d件，罚款金额%s万元"
-        "（上周%d件，罚款金额%s万元；去年同期%d件，罚款金额%s万元），"
-        "环比%s%s%%，为去年同期的%s倍。"
+        "本周（%s）全市住建系统共作出工程建设领域处罚%d件，（上周%d件，去年同期%d件），"
+        "环比%s%s%%，为去年同期的%s倍%s。"
         "在施项目数量较多的前八个区中，每百工程处罚量从高到底排名分别是%s。"
-        % (rng, c["tw_punish"], fmt_amount(c["tw_amount"]),
-           c["lw_punish"], fmt_amount(c["lw_amount"]),
-           c["ly_punish"], fmt_amount(c["ly_amount"]),
-           phb_dir, phb_val, ptimes, rank_str)
+        % (rng, c["tw_punish"], c["lw_punish"], c["ly_punish"],
+           phb_dir, phb_val, ptimes, amt_seg, rank_str)
     )
     return para1, para2
 
