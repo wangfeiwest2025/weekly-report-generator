@@ -187,11 +187,12 @@ def weekly_stats_from_raw(check_raw_path, d0, d1):
 
 
 def last_year_check(path, m0, d0, m1, d1):
-    """2025年建筑市场检查.xls -> (检查数, 问题数)，按添加时间（与本周口径一致）。"""
+    """2025年建筑市场检查.xls -> (检查数, 问题数)，按检查开始日期 + 模板过滤口径（与2026年添加日期口径区分）。"""
     df = pd.read_excel(path, sheet_name=0)
-    col = "添加时间" if "添加时间" in df.columns else "检查开始日期"
-    mask = md_mask(df[col], m0, d0, m1, d1)
+    mask = md_mask(df["检查开始日期"], m0, d0, m1, d1)
     sub = df[mask]
+    if "检查单名称（模板）" in sub.columns:
+        sub = sub[sub["检查单名称（模板）"].isin(BM_TEMPLATES)]
     n_check = len(sub)
     n_prob = sub["处理结果"].astype(str).str.strip().isin(RESULT_PROBLEM).sum()
     return int(n_check), int(n_prob)
@@ -334,7 +335,7 @@ def build_paragraphs(c):
     seg += "。"
 
     para1 = (
-        "本周（%s）全市住建系统共开展建筑市场执法检查%d项次（上周%d项次，去年同期项%d次），"
+        "本周（%s）全市住建系统共开展建筑市场执法检查%d项次（上周%d项次，去年同期%d次），"
         "检查量环比%s%s%%，同比%s%s%%，"
         "检查发现问题项目%d项次（上周%d项次，去年同期%d项次），"
         "检查发现问题率环比%s%s个百分点，为去年同期的%s倍。"
@@ -469,7 +470,7 @@ def compute(opts, log):
 
     ly_check, ly_prob = last_year_check(opts["check2025"], d0.month, d0.day, d1.month, d1.day)
     ly_punish, ly_amount = last_year_punish(opts["punish2025"], d0.month, d0.day, d1.month, d1.day)
-    log("去年同期（2025年xls按同月日、处罚决定书日期口径）: 检查 %d 次 / 问题 %d 项次 / 处罚 %d 件"
+    log("去年同期（2025年xls按同月日、检查开始日期+模板过滤/处罚决定书日期口径）: 检查 %d 次 / 问题 %d 项次 / 处罚 %d 件"
         % (ly_check, ly_prob, ly_punish))
     if ly_amount is not None:
         log("去年同期罚款金额: %.1f 万元" % (ly_amount / 10000))
